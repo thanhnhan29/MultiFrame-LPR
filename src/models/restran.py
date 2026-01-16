@@ -1,13 +1,13 @@
-"""ResTranOCR: ResNet + Transformer architecture (Advanced)."""
+"""ResTranOCR: ResNet + Transformer architecture (Advanced) with STN."""
 import torch
 import torch.nn as nn
-
-from src.models.components import AttentionFusion, PositionalEncoding, ResNetFeatureExtractor
+import torch.nn.functional as F
+from src.models.components import ResNetFeatureExtractor, AttentionFusion, PositionalEncoding, STNBlock
 
 class ResTranOCR(nn.Module):
     """
-    Modern OCR architecture using ResNet and Transformer.
-    Pipeline: Input (5 frames) -> ResNet -> Attention Fusion -> Transformer -> CTC Head
+    Modern OCR architecture using optional STN, ResNet and Transformer.
+    Pipeline: Input (5 frames) -> [Optional STN] -> ResNet -> Attention Fusion -> Transformer -> CTC Head
     """
     def __init__(
         self,
@@ -16,18 +16,24 @@ class ResTranOCR(nn.Module):
         transformer_heads: int = 8,
         transformer_layers: int = 3,
         transformer_ff_dim: int = 2048,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_stn: bool = True
     ):
         super().__init__()
         self.cnn_channels = 512
+        self.use_stn = use_stn
         
-        # 1. Backbone: ResNet (Stronger than VGG)
+        # 1. Spatial Transformer Network
+        if self.use_stn:
+            self.stn = STNBlock(in_channels=3)
+
+        # 2. Backbone: ResNet
         self.backbone = ResNetFeatureExtractor(layers=resnet_layers, pretrained=False)
         
-        # 2. Fusion
+        # 3. Attention Fusion
         self.fusion = AttentionFusion(channels=self.cnn_channels)
         
-        # 3. Sequence Modeling: Transformer Encoder
+        # 4. Transformer Encoder
         self.pos_encoder = PositionalEncoding(d_model=self.cnn_channels, dropout=dropout)
         
         encoder_layer = nn.TransformerEncoderLayer(
@@ -40,7 +46,7 @@ class ResTranOCR(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=transformer_layers)
         
-        # 4. Prediction Head
+        # 5. Prediction Head
         self.head = nn.Linear(self.cnn_channels, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -52,14 +58,29 @@ class ResTranOCR(nn.Module):
         """
         b, t, c, h, w = x.size()
         
-        # Flatten batch and frames
-        x_flat = x.view(b * t, c, h, w)
+        if self.use_stn:
+            # 1. Compute temporal mean to find "stable" features
+            x_mean = torch.mean(x, dim=1) # [B, 3, H, W]
+            
+            # 2. Predict affine matrix from the mean frame
+            theta = self.stn(x_mean)      # [B, 2, 3]
+            
+            # 3. Prepare input for grid_sample (Flatten batch and time)
+            x_flat = x.view(b * t, c, h, w)
+            
+            # 4. Repeat theta for all frames (Temporal consistency)
+            # [B, 2, 3] -> [B, T, 2, 3] -> [B*T, 2, 3]
+            theta_repeated = theta.unsqueeze(1).repeat(1, t, 1, 1).view(b * t, 2, 3)
+            
+            # 5. Apply Warp
+            grid = F.affine_grid(theta_repeated, x_flat.size(), align_corners=False)
+            x_aligned = F.grid_sample(x_flat, grid, align_corners=False)
+        else:
+            # Skip STN, directly flatten frames
+            x_aligned = x.view(b * t, c, h, w)
         
-        # Extract features
-        features = self.backbone(x_flat) # [B*T, 512, 1, W']
-        
-        # Fuse frames
-        fused = self.fusion(features)    # [B, 512, 1, W']
+        features = self.backbone(x_aligned) # [B*T, 512, 1, W']
+        fused = self.fusion(features)       # [B, 512, 1, W']
         
         # Prepare for Transformer: [B, C, 1, W'] -> [B, W', C]
         seq_input = fused.squeeze(2).permute(0, 2, 1)
@@ -68,7 +89,6 @@ class ResTranOCR(nn.Module):
         seq_input = self.pos_encoder(seq_input)
         seq_out = self.transformer(seq_input) # [B, W', C]
         
-        # Classification
         out = self.head(seq_out)              # [B, W', Num_Classes]
         
         return out.log_softmax(2)

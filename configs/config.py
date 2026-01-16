@@ -10,16 +10,15 @@ class Config:
     
     # Experiment tracking
     MODEL_TYPE: str = "restran"  # "crnn" or "restran"
-    EXPERIMENT_NAME: str = "restran18"
+    EXPERIMENT_NAME: str = MODEL_TYPE
     AUGMENTATION_LEVEL: str = "full"  # "full" or "light"
-    TEST_BEAM_SEARCH: bool = False
+    USE_STN: bool = True  # Enable Spatial Transformer Network
     
     # Data paths
     DATA_ROOT: str = "data/train"
     VAL_SPLIT_FILE: str = "data/val_tracks.json"
     SUBMISSION_FILE: str = "submission.txt"
     
-    # Image dimensions
     IMG_HEIGHT: int = 32
     IMG_WIDTH: int = 128
     
@@ -28,21 +27,21 @@ class Config:
     
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 1e-4
+    LEARNING_RATE: float = 5e-4
     EPOCHS: int = 30
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 1e-4
     GRAD_CLIP: float = 5.0
     SPLIT_RATIO: float = 0.9
-    USE_CUDNN_BENCHMARK: bool = True
+    USE_CUDNN_BENCHMARK: bool = False
     
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
     RNN_DROPOUT: float = 0.25
     
     # ResTranOCR model hyperparameters
-    RESNET_LAYERS: int = 18
+    RESNET_LAYERS: int = 34
     TRANSFORMER_HEADS: int = 8
     TRANSFORMER_LAYERS: int = 3
     TRANSFORMER_FF_DIM: int = 2048

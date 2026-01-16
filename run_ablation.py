@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automation script to run ablation experiments for ResTran/CRNN models."""
+"""Automation script to run ablation experiments for STN impact analysis (CRNN vs ResTran34)."""
 
 import os
 import subprocess
@@ -7,40 +7,66 @@ import sys
 from typing import Any, Dict, List, Optional
 
 
-def build_command(exp: Dict[str, Any], output_dir: str = "experiments") -> List[str]:
-    """Build the python3 train.py command from an experiment spec."""
+def build_command(experiment_config: Dict[str, Any], output_dir: str = "experiments") -> List[str]:
+    """Build the python3 train.py command from an experiment configuration.
+    
+    Args:
+        experiment_config: Dictionary containing experiment parameters.
+        output_dir: Directory to save experiment outputs.
+    
+    Returns:
+        List of command line arguments.
+    """
     cmd: List[str] = [sys.executable or "python3", "train.py"]
 
-    if "experiment_name" in exp:
-        cmd += ["-n", str(exp["experiment_name"])]
-    if "model" in exp:
-        cmd += ["-m", str(exp["model"])]
-    if "resnet_layers" in exp:
-        cmd += ["--resnet-layers", str(exp["resnet_layers"])]
-    if "aug_level" in exp:
-        cmd += ["--aug-level", str(exp["aug_level"])]
+    # Basic arguments
+    if "experiment_name" in experiment_config:
+        cmd += ["-n", str(experiment_config["experiment_name"])]
+    if "model" in experiment_config:
+        cmd += ["-m", str(experiment_config["model"])]
+    if "resnet_layers" in experiment_config:
+        cmd += ["--resnet-layers", str(experiment_config["resnet_layers"])]
+    if "aug_level" in experiment_config:
+        cmd += ["--aug-level", str(experiment_config["aug_level"])]
     
+    # Always set output directory
     cmd += ["--output-dir", output_dir]
     
-    for flag in exp.get("extra_flags", []):
+    # Handle extra flags (like --no-stn)
+    for flag in experiment_config.get("extra_flags", []):
         cmd.append(str(flag))
 
     return cmd
 
 
 def _parse_best_accuracy(log_path: str) -> Optional[float]:
-    """Parse best validation accuracy from log file."""
+    """Parse best validation accuracy from log file.
+    
+    Args:
+        log_path: Path to the log file.
+    
+    Returns:
+        Best validation accuracy as float, or None if not found.
+    """
     try:
         with open(log_path, "r") as f:
             for line in f:
                 line = line.strip()
-                for pattern in ["Best Val Acc:", "Best accuracy:"]:
+                # Check for patterns: "Best Val Acc: X.XX%" or "Best accuracy: X.XX%"
+                for pattern in ["Best Val Acc:", "Best accuracy:", "Best Val Acc:"]:
                     if pattern in line:
                         try:
                             token = line.split(pattern)[1].strip().split("%")[0]
                             return float(token)
                         except (ValueError, IndexError):
                             continue
+                # Also check for final summary line
+                if "Training complete! Best Val Acc:" in line:
+                    try:
+                        token = line.split("Best Val Acc:")[1].strip().split("%")[0]
+                        return float(token)
+                    except (ValueError, IndexError):
+                        continue
     except FileNotFoundError:
         pass
     return None
@@ -50,44 +76,54 @@ def main() -> None:
     experiments_dir = "experiments"
     os.makedirs(experiments_dir, exist_ok=True)
 
+    # Define the 4 experiments as requested
+    # Note: We assume default behavior is "With STN". 
+    # We pass "--no-stn" to disable it.
     experiments: List[Dict[str, Any]] = [
+        # 1. CRNN without STN
         {
-            "name": "restran_base",
-            "experiment_name": "restran_base",
-            "model": "restran",
-            "resnet_layers": 18,
+            "name": "crnn_no_stn",
+            "experiment_name": "crnn_no_stn",
+            "model": "crnn",
             "aug_level": "full",
+            "extra_flags": ["--no-stn"]  # Flag to disable STN
         },
+        # 2. CRNN with STN (Baseline)
         {
-            "name": "restran_r34",
-            "experiment_name": "restran_r34",
+            "name": "crnn_with_stn",
+            "experiment_name": "crnn_with_stn",
+            "model": "crnn",
+            "aug_level": "full",
+            # No extra flags -> Default uses STN
+        },
+        # 3. ResTran34 without STN
+        {
+            "name": "restran34_no_stn",
+            "experiment_name": "restran34_no_stn",
             "model": "restran",
             "resnet_layers": 34,
             "aug_level": "full",
+            "extra_flags": ["--no-stn"]  # Flag to disable STN
         },
+        # 4. ResTran34 with STN
         {
-            "name": "restran_light_aug",
-            "experiment_name": "restran_light_aug",
+            "name": "restran34_with_stn",
+            "experiment_name": "restran34_with_stn",
             "model": "restran",
-            "resnet_layers": 18,
-            "aug_level": "light",
-        },
-        {
-            "name": "crnn_base",
-            "experiment_name": "crnn_base",
-            "model": "crnn",
+            "resnet_layers": 34,
             "aug_level": "full",
+            # No extra flags -> Default uses STN
         },
     ]
 
     results_summary: List[Dict[str, Any]] = []
 
-    for exp in experiments:
-        exp_name = exp["name"]
-        log_path = os.path.join(experiments_dir, f"{exp_name}.log")
-        cmd = build_command(exp, experiments_dir)
+    for experiment_config in experiments:
+        experiment_name = experiment_config["name"]
+        log_path = os.path.join(experiments_dir, f"{experiment_name}.log")
+        cmd = build_command(experiment_config, experiments_dir)
 
-        print(f"\n=== Running experiment: {exp_name} ===")
+        print(f"\n=== Running experiment: {experiment_name} ===")
         print("Command:", " ".join(cmd))
 
         try:
@@ -101,32 +137,32 @@ def main() -> None:
                 )
 
             if process.returncode != 0:
-                print(f"[{exp_name}] FAILED with return code {process.returncode}. See {log_path}")
+                print(f"[{experiment_name}] FAILED with return code {process.returncode}. See {log_path}")
                 results_summary.append(
-                    {"name": exp_name, "best_acc": None}
+                    {"name": experiment_name, "best_acc": None}
                 )
                 continue
 
-            print(f"[{exp_name}] COMPLETED successfully. Log: {log_path}")
+            print(f"[{experiment_name}] COMPLETED successfully. Log: {log_path}")
 
             # Parse best accuracy from log
-            best_acc = _parse_best_accuracy(log_path)
+            best_accuracy = _parse_best_accuracy(log_path)
 
             results_summary.append(
-                {"name": exp_name, "best_acc": best_acc}
+                {"name": experiment_name, "best_acc": best_accuracy}
             )
 
         except Exception as e:
-            print(f"[{exp_name}] ERROR while running experiment: {e}")
+            print(f"[{experiment_name}] ERROR while running experiment: {e}")
             results_summary.append(
-                {"name": exp_name, "best_acc": None}
+                {"name": experiment_name, "best_acc": None}
             )
 
     # Print and save summary table
     if results_summary:
         summary_lines = []
-        summary_lines.append("=== Ablation Summary ===")
-        header = f"{'Experiment':20s} | {'Best Acc (%)':12s}"
+        summary_lines.append("=== Ablation Summary (STN Impact) ===")
+        header = f"{'Experiment':25s} | {'Best Acc (%)':12s}"
         summary_lines.append(header)
         summary_lines.append("-" * len(header))
         
@@ -137,7 +173,7 @@ def main() -> None:
                 if isinstance(row.get("best_acc"), (int, float))
                 else "N/A"
             )
-            summary_lines.append(f"{name:20s} | {best_acc:12s}")
+            summary_lines.append(f"{name:25s} | {best_acc:12s}")
         
         summary_text = "\n".join(summary_lines)
         print("\n" + summary_text)
@@ -155,4 +191,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

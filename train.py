@@ -85,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         default="results",
         help="Directory to save checkpoints and submission files (default: results/)",
     )
+    parser.add_argument(
+        "--no-stn",
+        action="store_true",
+        help="Disable Spatial Transformer Network (STN) alignment",
+    )
     return parser.parse_args()
 
 
@@ -120,6 +125,9 @@ def main():
     if args.aug_level is not None:
         config.AUGMENTATION_LEVEL = args.aug_level
     
+    if args.no_stn:
+        config.USE_STN = False
+    
     # Output directory
     config.OUTPUT_DIR = args.output_dir
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
@@ -129,6 +137,7 @@ def main():
     print(f"🚀 Configuration:")
     print(f"   EXPERIMENT: {config.EXPERIMENT_NAME}")
     print(f"   MODEL: {config.MODEL_TYPE}")
+    print(f"   USE_STN: {config.USE_STN}")
     print(f"   DATA_ROOT: {config.DATA_ROOT}")
     print(f"   EPOCHS: {config.EPOCHS}")
     print(f"   BATCH_SIZE: {config.BATCH_SIZE}")
@@ -201,12 +210,14 @@ def main():
             transformer_layers=config.TRANSFORMER_LAYERS,
             transformer_ff_dim=config.TRANSFORMER_FF_DIM,
             dropout=config.TRANSFORMER_DROPOUT,
+            use_stn=config.USE_STN,
         ).to(config.DEVICE)
     else:
         model = MultiFrameCRNN(
             num_classes=config.NUM_CLASSES,
             hidden_size=config.HIDDEN_SIZE,
-            rnn_dropout=config.RNN_DROPOUT
+            rnn_dropout=config.RNN_DROPOUT,
+            use_stn=config.USE_STN,
         ).to(config.DEVICE)
     
     # Print model summary
@@ -224,8 +235,6 @@ def main():
     )
     
     trainer.fit()
-    
-    print(f"\n✅ Training complete! Best accuracy: {trainer.best_acc:.2f}%")
 
 
 if __name__ == "__main__":

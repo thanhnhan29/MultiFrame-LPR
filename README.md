@@ -9,10 +9,11 @@ The project implements **Multi-Frame OCR** architectures that utilize **Attentio
 ## 📌 Features
 
 * **Multi-Frame Input Handling:** Processes sequences of 5 frames simultaneously to mitigate low-resolution artifacts.
+* **Spatial Transformer Network (STN):** Shared STN module aligns input frames using temporal mean for consistent feature extraction.
 * **Attention-Based Fusion:** A dedicated `AttentionFusion` module dynamically weights feature maps from different frames before sequence modeling.
 * **Dual Architecture Support:**
-  * **CRNN (Baseline):** CNN backbone + Bidirectional LSTM with CTC Loss.
-  * **ResTranOCR (Advanced):** ResNet backbone + Transformer Encoder with CTC Loss.
+  * **CRNN (Baseline):** STN + CNN backbone + Bidirectional LSTM with CTC Loss.
+  * **ResTranOCR (Advanced):** STN + ResNet backbone + Transformer Encoder with CTC Loss.
 * **Robust Data Pipeline:**
   * Handles both real LR images and synthetic LR (degraded HR) images.
   * Advanced augmentations using `Albumentations` (Affine, Perspective, HSV, CoarseDropout).
@@ -27,21 +28,23 @@ The project implements **Multi-Frame OCR** architectures that utilize **Attentio
 The pipeline follows this flow:
 
 1. **Input:** Tensor of shape `(Batch, 5, 3, 32, 128)`.
-2. **CNN Backbone:** Extracts features from each frame independently `(B*5, 512, 1, W')`.
-3. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
-4. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
-5. **BiLSTM:** Captures contextual dependencies `(B, W', Hidden*2)`.
-6. **CTC Decoder:** Outputs the final character sequence.
+2. **STN Alignment:** Computes temporal mean frame and applies shared affine transformation to all frames for consistent alignment `(B*5, 3, 32, 128)`.
+3. **CNN Backbone:** Extracts features from each aligned frame independently `(B*5, 512, 1, W')`.
+4. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
+5. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
+6. **BiLSTM:** Captures contextual dependencies `(B, W', Hidden*2)`.
+7. **CTC Decoder:** Outputs the final character sequence.
 
 ### ResTranOCR (Advanced)
 The pipeline follows this flow:
 
 1. **Input:** Tensor of shape `(Batch, 5, 3, 32, 128)`.
-2. **ResNet Backbone:** Extracts features from each frame independently `(B*5, 512, 1, W')`.
-3. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
-4. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
-5. **Transformer Encoder:** Captures long-range dependencies with positional encoding `(B, W', 512)`.
-6. **CTC Decoder:** Outputs the final character sequence.
+2. **STN Alignment:** Computes temporal mean frame and applies shared affine transformation to all frames for consistent alignment `(B*5, 3, 32, 128)`.
+3. **ResNet Backbone:** Extracts features from each aligned frame independently `(B*5, 512, 1, W')`.
+4. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
+5. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
+6. **Transformer Encoder:** Captures long-range dependencies with positional encoding `(B, W', 512)`.
+7. **CTC Decoder:** Outputs the final character sequence.
 
 ## 📂 Project Structure
 
@@ -56,12 +59,12 @@ The pipeline follows this flow:
 │   ├── models/          # Model architectures
 │   │   ├── crnn.py      # CRNN baseline architecture
 │   │   ├── restran.py   # ResTranOCR advanced architecture
-│   │   └── components.py # Shared components (AttentionFusion, ResNet, PositionalEncoding)
+│   │   └── components.py # Shared components (STNBlock, AttentionFusion, ResNet, PositionalEncoding)
 │   ├── training/         # Training logic
 │   │   └── trainer.py   # Trainer loop, Validation, Checkpointing
 │   └── utils/           # Utilities
 │       ├── common.py    # Seeding utilities
-│       └── postprocess.py # CTC Decoding (Greedy & Beam Search)
+│       └── postprocess.py # CTC Decoding (Greedy)
 ├── train.py             # Main entry point for training
 ├── run_ablation.py      # Automated ablation study script
 ├── pyproject.toml       # Dependencies
@@ -134,7 +137,12 @@ python train.py \
 * `--batch-size`: Batch size for training
 * `--epochs`: Number of training epochs
 * `--lr, --learning-rate`: Learning rate
+* `--seed`: Random seed for reproducibility
+* `--num-workers`: Number of data loader workers
+* `--hidden-size`: LSTM hidden size for CRNN
 * `--resnet-layers`: ResNet variant for ResTranOCR (18 or 34)
+* `--transformer-heads`: Number of transformer attention heads
+* `--transformer-layers`: Number of transformer encoder layers
 * `--aug-level`: Augmentation level (`full` or `light`)
 * `--output-dir`: Directory to save checkpoints and submission files (default: `results/`)
 
@@ -163,48 +171,3 @@ Results are saved in `experiments/` directory with logs and summary table.
 ## ⚙️ Configuration
 
 Key hyperparameters can be modified in `configs/config.py`:
-
-### Data Configuration
-* `IMG_HEIGHT`, `IMG_WIDTH`: 32x128 (Default)
-* `CHARS`: Standard alphanumeric set (0-9, A-Z)
-* `SPLIT_RATIO`: Train/Val split (0.9)
-* `AUGMENTATION_LEVEL`: `full` or `light`
-
-### Training Configuration
-* `BATCH_SIZE`: 64 (Default)
-* `LEARNING_RATE`: 1e-4 (Default)
-* `EPOCHS`: 30 (Default)
-* `WEIGHT_DECAY`: 1e-4
-* `GRAD_CLIP`: 5.0
-
-### Model Configuration
-**CRNN:**
-* `HIDDEN_SIZE`: LSTM hidden dimension (256)
-* `RNN_DROPOUT`: LSTM dropout rate (0.25)
-
-**ResTranOCR:**
-* `RESNET_LAYERS`: ResNet variant (18 or 34)
-* `TRANSFORMER_HEADS`: Number of attention heads (8)
-* `TRANSFORMER_LAYERS`: Number of transformer encoder layers (3)
-* `TRANSFORMER_FF_DIM`: Feedforward dimension (2048)
-* `TRANSFORMER_DROPOUT`: Dropout rate (0.1)
-
-### Inference Configuration
-* `TEST_BEAM_SEARCH`: Enable beam search decoding during validation (False by default)
-
-## 🔬 Technical Details
-
-### Loss Function
-* Standard CTC Loss (`torch.nn.CTCLoss`) with `zero_infinity=True` for stable training.
-
-### Decoding Methods
-* **Greedy Decoding:** Default method using `itertools.groupby` to remove duplicates and blanks.
-* **Beam Search:** Optional advanced decoding (enabled via `TEST_BEAM_SEARCH=True`).
-
-### Data Augmentation
-* **Full Augmentation:** Affine transforms, Perspective, Brightness/Contrast, HSV shifts, Rotation, Channel Shuffle, Coarse Dropout.
-* **Light Augmentation:** Resize + Normalize only (for ablation studies).
-
-### Multi-Frame Fusion
-* Attention-based fusion computes quality scores for each frame and performs weighted sum across temporal dimension.
-* Helps focus on clearer frames while suppressing noisy ones.

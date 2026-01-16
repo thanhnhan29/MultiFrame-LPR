@@ -10,8 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.utils.common import seed_everything
-from src.utils.postprocess import decode_beam_search, decode_with_confidence
-
+from src.utils.postprocess import decode_with_confidence
 
 
 class Trainer:
@@ -129,13 +128,11 @@ class Trainer:
         
         self.model.eval()
         val_loss = 0.0
-        total_correct_greedy = 0
-        total_correct_beam = 0
+        total_correct = 0
         total_samples = 0
         all_preds: List[str] = []
         all_targets: List[str] = []
         submission_data: List[str] = []
-        compute_beam = getattr(self.config, "TEST_BEAM_SEARCH", False)
         
         with torch.no_grad():
             for images, targets, target_lengths, labels_text, track_ids in self.val_loader:
@@ -156,12 +153,10 @@ class Trainer:
                 )
                 val_loss += loss.item()
 
-                # Greedy decoding
-                decoded_greedy = decode_with_confidence(preds, self.idx2char)
-                # Optional beam-search decoding
-                decoded_beam = decode_beam_search(preds, self.idx2char) if compute_beam else None
+                # Decode predictions
+                decoded_list = decode_with_confidence(preds, self.idx2char)
 
-                for i, (pred_text, conf) in enumerate(decoded_greedy):
+                for i, (pred_text, conf) in enumerate(decoded_list):
                     gt_text = labels_text[i]
                     track_id = track_ids[i]
                     
@@ -169,27 +164,18 @@ class Trainer:
                     all_targets.append(gt_text)
                     
                     if pred_text == gt_text:
-                        total_correct_greedy += 1
+                        total_correct += 1
                     submission_data.append(f"{track_id},{pred_text};{conf:.4f}")
-
-                    if compute_beam and decoded_beam is not None:
-                        beam_text, _ = decoded_beam[i]
-                        if beam_text == gt_text:
-                            total_correct_beam += 1
                     
                 total_samples += len(labels_text)
 
         avg_val_loss = val_loss / len(self.val_loader)
-        val_acc = (total_correct_greedy / total_samples) * 100 if total_samples > 0 else 0.0
-        beam_acc = (total_correct_beam / total_samples) * 100 if (total_samples > 0 and compute_beam) else None
+        val_acc = (total_correct / total_samples) * 100 if total_samples > 0 else 0.0
         
         metrics = {
             'loss': avg_val_loss,
             'acc': val_acc,
         }
-        if beam_acc is not None:
-            metrics['beam_acc'] = beam_acc
-            print(f"[VAL] Greedy Acc: {val_acc:.2f}% | Beam Acc: {beam_acc:.2f}%")
         
         return metrics, submission_data
 
@@ -258,7 +244,7 @@ class Trainer:
                 images = images.to(self.device)
                 preds = self.model(images)
                 
-                decoded_list = decode_beam_search(preds, self.idx2char)
+                decoded_list = decode_with_confidence(preds, self.idx2char)
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     results.append((track_ids[i], pred_text, conf))
         

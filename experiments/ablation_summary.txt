@@ -1,8 +1,7 @@
-=== Ablation Summary ===
-Experiment           | Best Acc (%)
------------------------------------
-restran_base         | 76.10       
-restran_no_stn       | 75.15       
-restran_r34          | 77.35       
-restran_light_aug    | 74.00       
-crnn_base            | 74.25       
+=== Ablation Summary (STN Impact) ===
+Experiment                | Best Acc (%)
+----------------------------------------
+crnn_no_stn               | 74.45       
+crnn_with_stn             | 75.65       
+restran34_no_stn          | 75.80       
+restran34_with_stn        | 77.90       

@@ -7,6 +7,48 @@ import torch.nn.functional as F
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, resnet18, resnet34
 
 
+class STNBlock(nn.Module):
+    """
+    Spatial Transformer Network (STN) for image alignment.
+    Learns to crop and rectify images before feeding them to the backbone.
+    """
+    def __init__(self, in_channels: int = 3):
+        super().__init__()
+        
+        # Localization network: Predicts transformation parameters
+        self.localization = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=5, stride=2, padding=2),
+            nn.MaxPool2d(2, 2),
+            nn.ReLU(True),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.AdaptiveAvgPool2d((4, 8)) # Output fixed size for FC
+        )
+        
+        # Regressor for the 3x2 affine matrix
+        self.fc_loc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 8, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 6)
+        )
+        
+        # Initialize the weights/bias with identity transformation
+        self.fc_loc[-1].weight.data.zero_()
+        self.fc_loc[-1].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input images [Batch, C, H, W]
+        Returns:
+            theta: Affine transformation matrix [Batch, 2, 3]
+        """
+        xs = self.localization(x)
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+        return theta
+
 class AttentionFusion(nn.Module):
     """
     Attention-based fusion module for combining multi-frame features.
@@ -28,9 +70,9 @@ class AttentionFusion(nn.Module):
         Returns:
             Fused feature map. Shape: [Batch, C, H, W]
         """
-        b_frames, c, h, w = x.size()
+        total_frames, c, h, w = x.size()
         num_frames = 5  # Fixed based on dataset
-        batch_size = b_frames // num_frames
+        batch_size = total_frames // num_frames
 
         # Reshape to [Batch, Frames, C, H, W]
         x_view = x.view(batch_size, num_frames, c, h, w)
@@ -42,6 +84,30 @@ class AttentionFusion(nn.Module):
         # Weighted sum fusion
         fused_features = torch.sum(x_view * weights, dim=1)
         return fused_features
+
+
+class CNNBackbone(nn.Module):
+    """A simple CNN backbone for CRNN baseline."""
+    def __init__(self, out_channels=512):
+        super().__init__()
+        # Defined as a list of layers for clarity: Conv -> ReLU -> Pool
+        self.features = nn.Sequential(
+            # Block 1
+            nn.Conv2d(3, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2),
+            # Block 2
+            nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2),
+            # Block 3
+            nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True),
+            nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2, 2), (2, 1), (0, 1)),
+            # Block 4
+            nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True),
+            nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2, 2), (2, 1), (0, 1)),
+            # Block 5 (Map to sequence height 1)
+            nn.Conv2d(512, out_channels, 2, 1, 0), nn.BatchNorm2d(out_channels), nn.ReLU(True)
+        )
+
+    def forward(self, x):
+        return self.features(x)
 
 
 class ResNetFeatureExtractor(nn.Module):
