@@ -1,59 +1,87 @@
-"""Multi-frame CRNN architecture for license plate recognition."""
+"""Multi-frame CRNN architecture (Baseline)."""
 import torch
 import torch.nn as nn
 
-from src.models.components import AttentionFusion, CNNBackbone, SequenceModeler
+from src.models.components import AttentionFusion
+
+class CNNBackbone(nn.Module):
+    """A simple CNN backbone for CRNN baseline."""
+    def __init__(self, out_channels=512):
+        super().__init__()
+        # Defined as a list of layers for clarity: Conv -> ReLU -> Pool
+        self.features = nn.Sequential(
+            # Block 1
+            nn.Conv2d(3, 64, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2),
+            # Block 2
+            nn.Conv2d(64, 128, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d(2, 2),
+            # Block 3
+            nn.Conv2d(128, 256, 3, 1, 1), nn.BatchNorm2d(256), nn.ReLU(True),
+            nn.Conv2d(256, 256, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2, 2), (2, 1), (0, 1)),
+            # Block 4
+            nn.Conv2d(256, 512, 3, 1, 1), nn.BatchNorm2d(512), nn.ReLU(True),
+            nn.Conv2d(512, 512, 3, 1, 1), nn.ReLU(True), nn.MaxPool2d((2, 2), (2, 1), (0, 1)),
+            # Block 5 (Map to sequence height 1)
+            nn.Conv2d(512, out_channels, 2, 1, 0), nn.BatchNorm2d(out_channels), nn.ReLU(True)
+        )
+
+    def forward(self, x):
+        return self.features(x)
 
 
 class MultiFrameCRNN(nn.Module):
-    """CNN-RNN architecture with multi-frame attention fusion.
-    
-    Architecture: CNN Backbone -> Attention Fusion -> BiLSTM -> FC -> CTC
     """
-    
+    Standard CRNN architecture adapted for Multi-frame input.
+    Pipeline: Input (5 frames) -> CNN Backbone -> Attention Fusion -> BiLSTM -> CTC Head
+    """
     def __init__(self, num_classes: int, hidden_size: int = 256, rnn_dropout: float = 0.25):
-        """
-        Args:
-            num_classes: Number of output classes (including blank for CTC).
-            hidden_size: LSTM hidden dimension.
-            rnn_dropout: Dropout rate for LSTM layers.
-        """
         super().__init__()
         self.cnn_channels = 512
         
-        self.cnn = CNNBackbone(out_channels=self.cnn_channels)
+        # 1. Feature Extractor (CNN Backbone)
+        self.backbone = CNNBackbone(out_channels=self.cnn_channels)
+        
+        # 2. Fusion
         self.fusion = AttentionFusion(channels=self.cnn_channels)
-        self.rnn = SequenceModeler(
-            input_size=self.cnn_channels,
+        
+        # 3. Sequence Modeling (BiLSTM)
+        self.rnn = nn.LSTM(
+            input_size=self.cnn_channels, # Height is collapsed to 1, so input is just channels
             hidden_size=hidden_size,
             num_layers=2,
+            bidirectional=True,
+            batch_first=True,
             dropout=rnn_dropout
         )
-        self.fc = nn.Linear(hidden_size * 2, num_classes)
+        
+        # 4. Prediction Head
+        self.head = nn.Linear(hidden_size * 2, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Input tensor of shape [B, T, C, H, W] where T=5 frames.
-        
+            x: [Batch, Frames, 3, H, W]
         Returns:
-            Log-softmax output of shape [B, W, num_classes].
+            Logits: [Batch, Seq_Len, Num_Classes]
         """
         b, t, c, h, w = x.size()
         
-        # Process all frames through CNN
-        x = x.view(b * t, c, h, w)
-        feat = self.cnn(x)  # [B*5, 512, H_out, W_out]
+        # Flatten batch and frames to process in parallel
+        x_flat = x.view(b * t, c, h, w)
         
-        # Fuse multi-frame features
-        fused = self.fusion(feat)  # [B, 512, H_out, W_out]
+        # Extract features
+        features = self.backbone(x_flat) # [B*T, 512, 1, W']
         
-        # Reshape for RNN: (B, C, H, W) -> (B, W, C*H)
-        b_out, c_out, h_f, w_f = fused.size()
-        rnn_input = fused.permute(0, 3, 1, 2).reshape(b_out, w_f, c_out * h_f)
+        # Fuse frames
+        fused = self.fusion(features)    # [B, 512, 1, W']
         
-        # Sequence modeling and classification
-        rnn_out = self.rnn(rnn_input)
-        out = self.fc(rnn_out)
+        # Prepare for RNN: [B, C, 1, W'] -> [B, W', C]
+        # Squeeze height (1) and permute
+        seq_input = fused.squeeze(2).permute(0, 2, 1)
+        
+        # RNN Modeling
+        rnn_out, _ = self.rnn(seq_input) # [B, W', Hidden*2]
+        
+        # Classification
+        out = self.head(rnn_out)         # [B, W', Num_Classes]
         
         return out.log_softmax(2)

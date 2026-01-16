@@ -17,8 +17,6 @@ def build_command(exp: Dict[str, Any], output_dir: str = "experiments") -> List[
         cmd += ["-m", str(exp["model"])]
     if "resnet_layers" in exp:
         cmd += ["--resnet-layers", str(exp["resnet_layers"])]
-    if exp.get("no_stn", False):
-        cmd += ["--no-stn"]
     if "aug_level" in exp:
         cmd += ["--aug-level", str(exp["aug_level"])]
     
@@ -58,15 +56,6 @@ def main() -> None:
             "experiment_name": "restran_base",
             "model": "restran",
             "resnet_layers": 18,
-            "no_stn": False,
-            "aug_level": "full",
-        },
-        {
-            "name": "restran_no_stn",
-            "experiment_name": "restran_no_stn",
-            "model": "restran",
-            "resnet_layers": 18,
-            "no_stn": True,
             "aug_level": "full",
         },
         {
@@ -74,7 +63,6 @@ def main() -> None:
             "experiment_name": "restran_r34",
             "model": "restran",
             "resnet_layers": 34,
-            "no_stn": False,
             "aug_level": "full",
         },
         {
@@ -82,7 +70,6 @@ def main() -> None:
             "experiment_name": "restran_light_aug",
             "model": "restran",
             "resnet_layers": 18,
-            "no_stn": False,
             "aug_level": "light",
         },
         {

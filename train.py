@@ -73,11 +73,6 @@ def parse_args() -> argparse.Namespace:
         help="Number of transformer encoder layers (default: from config)"
     )
     parser.add_argument(
-        "--no-stn",
-        action="store_true",
-        help="Disable STN module in ResTranOCR (overrides config.USE_STN=True)",
-    )
-    parser.add_argument(
         "--aug-level",
         type=str,
         choices=["full", "light"],
@@ -122,8 +117,6 @@ def main():
             setattr(config, config_name, value)
     
     # Special cases
-    if args.no_stn:
-        config.USE_STN = False
     if args.aug_level is not None:
         config.AUGMENTATION_LEVEL = args.aug_level
     
@@ -208,7 +201,6 @@ def main():
             transformer_layers=config.TRANSFORMER_LAYERS,
             transformer_ff_dim=config.TRANSFORMER_FF_DIM,
             dropout=config.TRANSFORMER_DROPOUT,
-            use_stn=config.USE_STN,
         ).to(config.DEVICE)
     else:
         model = MultiFrameCRNN(

@@ -1,9 +1,9 @@
 """MultiFrameDataset for license plate recognition with multi-frame input."""
-import os
 import glob
 import json
+import os
 import random
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -60,12 +60,14 @@ class MultiFrameDataset(Dataset):
         self.augmentation_level = augmentation_level
         
         if mode == 'train':
+            # Training: apply augmentation on the fly
             if augmentation_level == "light":
                 self.transform = get_light_transforms(img_height, img_width)
             else:
                 self.transform = get_train_transforms(img_height, img_width)
             self.degrade = get_degradation_transforms()
         else:
+            # Validation: only resize and normalize
             self.transform = get_val_transforms(img_height, img_width)
             self.degrade = None
 
@@ -170,7 +172,7 @@ class MultiFrameDataset(Dataset):
                     glob.glob(os.path.join(track_path, "hr-*.jpg"))
                 )
                 
-                # Sample 1: Real LR (guaranteed 5 frames)
+                # Real LR samples
                 self.samples.append({
                     'paths': lr_files,
                     'label': label,
@@ -178,7 +180,7 @@ class MultiFrameDataset(Dataset):
                     'track_id': track_id
                 })
                 
-                # Sample 2: Synthetic LR (only in train mode, guaranteed 5 frames)
+                # Synthetic LR samples (only in training mode)
                 if self.mode == 'train':
                     self.samples.append({
                         'paths': hr_files,
@@ -193,7 +195,11 @@ class MultiFrameDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str, str]:
-        """Load exactly 5 frames (guaranteed by dataset structure)."""
+        """Load exactly 5 frames (guaranteed by dataset structure).
+        
+        For training: applies degradation (if synthetic) then augmentation.
+        For validation: applies degradation (if synthetic) then clean transform.
+        """
         item = self.samples[idx]
         img_paths = item['paths']
         label = item['label']
@@ -205,9 +211,11 @@ class MultiFrameDataset(Dataset):
             image = cv2.imread(p, cv2.IMREAD_COLOR)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
+            # Apply degradation first (if synthetic), before any transform
             if is_synthetic and self.degrade:
                 image = self.degrade(image=image)['image']
             
+            # Apply transform (augmented for training, clean for validation)
             image = self.transform(image=image)['image']
             images_list.append(image)
 

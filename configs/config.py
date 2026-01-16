@@ -11,7 +11,6 @@ class Config:
     # Experiment tracking
     MODEL_TYPE: str = "restran"  # "crnn" or "restran"
     EXPERIMENT_NAME: str = "restran18"
-    USE_STN: bool = True
     AUGMENTATION_LEVEL: str = "full"  # "full" or "light"
     TEST_BEAM_SEARCH: bool = False
     
@@ -36,7 +35,6 @@ class Config:
     WEIGHT_DECAY: float = 1e-4
     GRAD_CLIP: float = 5.0
     SPLIT_RATIO: float = 0.9
-    PATIENCE: int = 10
     USE_CUDNN_BENCHMARK: bool = True
     
     # CRNN model hyperparameters

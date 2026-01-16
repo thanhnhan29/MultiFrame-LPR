@@ -9,9 +9,9 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.utils.postprocess import decode_with_confidence, decode_beam_search
 from src.utils.common import seed_everything
-from src.training.losses import LabelSmoothingCTCLoss
+from src.utils.postprocess import decode_beam_search, decode_with_confidence
+
 
 
 class Trainer:
@@ -42,8 +42,7 @@ class Trainer:
         seed_everything(config.SEED, benchmark=config.USE_CUDNN_BENCHMARK)
         
         # Loss and optimizer
-        smoothing = getattr(config, 'LABEL_SMOOTHING', 0.1)
-        self.criterion = LabelSmoothingCTCLoss(blank=0, smoothing=smoothing, zero_infinity=True)
+        self.criterion = nn.CTCLoss(blank=0, zero_infinity=True, reduction='mean')
         self.optimizer = optim.AdamW(
             model.parameters(),
             lr=config.LEARNING_RATE,
@@ -60,7 +59,6 @@ class Trainer:
         # Tracking
         self.best_acc = 0.0
         self.current_epoch = 0
-        self.patience_counter = 0
     
     def _get_output_path(self, filename: str) -> str:
         """Get full path for output file in configured directory."""
@@ -211,9 +209,8 @@ class Trainer:
         torch.save(self.model.state_dict(), path)
 
     def fit(self) -> None:
-        """Run the full training loop with Early Stopping."""
-        print(f"🚀 TRAINING START | Device: {self.device}")
-        print(f"📊 Early Stopping: Patience={self.config.PATIENCE} epochs (monitoring Val Acc)")
+        """Run the full training loop for specified number of epochs."""
+        print(f"🚀 TRAINING START | Device: {self.device} | Epochs: {self.config.EPOCHS}")
         
         for epoch in range(self.config.EPOCHS):
             self.current_epoch = epoch
@@ -228,30 +225,24 @@ class Trainer:
             current_lr = self.scheduler.get_last_lr()[0]
             
             # Log results
-            print(f"Result: Train Loss: {avg_train_loss:.4f} | "
+            print(f"Epoch {epoch + 1}/{self.config.EPOCHS}: "
+                  f"Train Loss: {avg_train_loss:.4f} | "
                   f"Val Loss: {val_loss:.4f} | "
                   f"Val Acc: {val_acc:.2f}% | "
                   f"LR: {current_lr:.2e}")
             
-            # Check for improvement
+            # Save best model
             if val_acc > self.best_acc:
                 self.best_acc = val_acc
-                self.patience_counter = 0
                 self.save_model()
                 exp_name = self._get_exp_name()
                 model_path = self._get_output_path(f"{exp_name}_best.pth")
-                print(f" -> ⭐ Saved Best Model: {model_path} ({val_acc:.2f}%)")
+                print(f"  ⭐ Saved Best Model: {model_path} ({val_acc:.2f}%)")
                 
                 if submission_data:
                     self.save_submission(submission_data)
-            else:
-                self.patience_counter += 1
-                print(f" -> No improvement. Patience: {self.patience_counter}/{self.config.PATIENCE}")
-                
-                if self.patience_counter >= self.config.PATIENCE:
-                    print(f"\n⏹️  Early Stopping triggered! No improvement for {self.config.PATIENCE} epochs.")
-                    print(f"✅ Best Val Acc: {self.best_acc:.2f}%")
-                    break
+        
+        print(f"\n✅ Training complete! Best Val Acc: {self.best_acc:.2f}%")
 
     def predict(self, loader: DataLoader) -> List[Tuple[str, str, float]]:
         """Run inference on a data loader.
