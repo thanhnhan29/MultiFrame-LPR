@@ -4,7 +4,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import ResNet18_Weights, ResNet34_Weights, resnet18, resnet34
+from torchvision.models import ResNet34_Weights, resnet34
 
 
 class STNBlock(nn.Module):
@@ -48,6 +48,7 @@ class STNBlock(nn.Module):
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
         return theta
+
 
 class AttentionFusion(nn.Module):
     """
@@ -113,20 +114,14 @@ class CNNBackbone(nn.Module):
 class ResNetFeatureExtractor(nn.Module):
     """
     ResNet-based backbone customized for OCR.
-    Modifies strides to preserve width (sequence length) while reducing height.
+    Uses ResNet34 with modified strides to preserve width (sequence length) while reducing height.
     """
-    def __init__(self, layers: int = 18, pretrained: bool = False):
+    def __init__(self, pretrained: bool = False):
         super().__init__()
         
-        # Load standard ResNet from torchvision
-        if layers == 18:
-            weights = ResNet18_Weights.DEFAULT if pretrained else None
-            resnet = resnet18(weights=weights)
-        elif layers == 34:
-            weights = ResNet34_Weights.DEFAULT if pretrained else None
-            resnet = resnet34(weights=weights)
-        else:
-            raise ValueError(f"Unsupported ResNet layers: {layers}")
+        # Load ResNet34 from torchvision
+        weights = ResNet34_Weights.DEFAULT if pretrained else None
+        resnet = resnet34(weights=weights)
 
         # --- OCR Customization ---
         # We need to keep the standard first layer (stride 2)

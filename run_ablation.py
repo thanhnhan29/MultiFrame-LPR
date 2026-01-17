@@ -24,8 +24,6 @@ def build_command(experiment_config: Dict[str, Any], output_dir: str = "experime
         cmd += ["-n", str(experiment_config["experiment_name"])]
     if "model" in experiment_config:
         cmd += ["-m", str(experiment_config["model"])]
-    if "resnet_layers" in experiment_config:
-        cmd += ["--resnet-layers", str(experiment_config["resnet_layers"])]
     if "aug_level" in experiment_config:
         cmd += ["--aug-level", str(experiment_config["aug_level"])]
     
@@ -76,9 +74,8 @@ def main() -> None:
     experiments_dir = "experiments"
     os.makedirs(experiments_dir, exist_ok=True)
 
-    # Define the 4 experiments as requested
-    # Note: We assume default behavior is "With STN". 
-    # We pass "--no-stn" to disable it.
+    # Define the 4 experiments for STN ablation study
+    # Default behavior uses STN; pass "--no-stn" to disable it.
     experiments: List[Dict[str, Any]] = [
         # 1. CRNN without STN
         {
@@ -101,7 +98,6 @@ def main() -> None:
             "name": "restran34_no_stn",
             "experiment_name": "restran34_no_stn",
             "model": "restran",
-            "resnet_layers": 34,
             "aug_level": "full",
             "extra_flags": ["--no-stn"]  # Flag to disable STN
         },
@@ -110,7 +106,6 @@ def main() -> None:
             "name": "restran34_with_stn",
             "experiment_name": "restran34_with_stn",
             "model": "restran",
-            "resnet_layers": 34,
             "aug_level": "full",
             # No extra flags -> Default uses STN
         },

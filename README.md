@@ -9,11 +9,11 @@ The project implements **Multi-Frame OCR** architectures that utilize **Attentio
 ## 📌 Features
 
 * **Multi-Frame Input Handling:** Processes sequences of 5 frames simultaneously to mitigate low-resolution artifacts.
-* **Spatial Transformer Network (STN):** Shared STN module aligns input frames using temporal mean for consistent feature extraction.
+* **Spatial Transformer Network (STN):** STN module predicts per-frame affine transformations to align and rectify input images before feature extraction.
 * **Attention-Based Fusion:** A dedicated `AttentionFusion` module dynamically weights feature maps from different frames before sequence modeling.
 * **Dual Architecture Support:**
-  * **CRNN (Baseline):** STN + CNN backbone + Bidirectional LSTM with CTC Loss.
-  * **ResTranOCR (Advanced):** STN + ResNet backbone + Transformer Encoder with CTC Loss.
+* **CRNN (Baseline):** STN + CNN backbone + Bidirectional LSTM with CTC Loss.
+* **ResTranOCR (Advanced):** STN + ResNet34 backbone + Transformer Encoder with CTC Loss.
 * **Robust Data Pipeline:**
   * Handles both real LR images and synthetic LR (degraded HR) images.
   * Advanced augmentations using `Albumentations` (Affine, Perspective, HSV, CoarseDropout).
@@ -28,7 +28,7 @@ The project implements **Multi-Frame OCR** architectures that utilize **Attentio
 The pipeline follows this flow:
 
 1. **Input:** Tensor of shape `(Batch, 5, 3, 32, 128)`.
-2. **STN Alignment:** Computes temporal mean frame and applies shared affine transformation to all frames for consistent alignment `(B*5, 3, 32, 128)`.
+2. **STN Alignment:** Predicts per-frame affine transformations and applies spatial alignment to each frame independently `(B*5, 3, 32, 128)`.
 3. **CNN Backbone:** Extracts features from each aligned frame independently `(B*5, 512, 1, W')`.
 4. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
 5. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
@@ -39,8 +39,8 @@ The pipeline follows this flow:
 The pipeline follows this flow:
 
 1. **Input:** Tensor of shape `(Batch, 5, 3, 32, 128)`.
-2. **STN Alignment:** Computes temporal mean frame and applies shared affine transformation to all frames for consistent alignment `(B*5, 3, 32, 128)`.
-3. **ResNet Backbone:** Extracts features from each aligned frame independently `(B*5, 512, 1, W')`.
+2. **STN Alignment:** Predicts per-frame affine transformations and applies spatial alignment to each frame independently `(B*5, 3, 32, 128)`.
+3. **ResNet34 Backbone:** Extracts features from each aligned frame independently `(B*5, 512, 1, W')`.
 4. **Attention Fusion:** Computes attention scores across the temporal dimension and fuses features into `(B, 512, 1, W')`.
 5. **Reshape:** Converts spatial features to sequential format `(B, W', 512)`.
 6. **Transformer Encoder:** Captures long-range dependencies with positional encoding `(B, W', 512)`.
@@ -125,7 +125,6 @@ python train.py \
     --batch-size 32 \
     --epochs 50 \
     --lr 0.0001 \
-    --resnet-layers 18 \
     --aug-level full \
     --output-dir results
 ```
@@ -140,7 +139,6 @@ python train.py \
 * `--seed`: Random seed for reproducibility
 * `--num-workers`: Number of data loader workers
 * `--hidden-size`: LSTM hidden size for CRNN
-* `--resnet-layers`: ResNet variant for ResTranOCR (18 or 34)
 * `--transformer-heads`: Number of transformer attention heads
 * `--transformer-layers`: Number of transformer encoder layers
 * `--aug-level`: Augmentation level (`full` or `light`)
@@ -155,10 +153,10 @@ python run_ablation.py
 ```
 
 This script runs multiple experiments with different configurations:
-* `restran_base`: ResNet18, full augmentation
-* `restran_r34`: ResNet34, full augmentation
-* `restran_light_aug`: ResNet18, light augmentation
-* `crnn_base`: CRNN baseline, full augmentation
+* `crnn_no_stn`: CRNN without STN, full augmentation
+* `crnn_with_stn`: CRNN with STN, full augmentation
+* `restran34_no_stn`: ResTranOCR (ResNet34) without STN, full augmentation
+* `restran34_with_stn`: ResTranOCR (ResNet34) with STN, full augmentation
 
 Results are saved in `experiments/` directory with logs and summary table.
 

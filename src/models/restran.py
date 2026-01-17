@@ -1,4 +1,4 @@
-"""ResTranOCR: ResNet + Transformer architecture (Advanced) with STN."""
+"""ResTranOCR: ResNet34 + Transformer architecture (Advanced) with STN."""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,13 +6,12 @@ from src.models.components import ResNetFeatureExtractor, AttentionFusion, Posit
 
 class ResTranOCR(nn.Module):
     """
-    Modern OCR architecture using optional STN, ResNet and Transformer.
-    Pipeline: Input (5 frames) -> [Optional STN] -> ResNet -> Attention Fusion -> Transformer -> CTC Head
+    Modern OCR architecture using optional STN, ResNet34 and Transformer.
+    Pipeline: Input (5 frames) -> [Optional STN] -> ResNet34 -> Attention Fusion -> Transformer -> CTC Head
     """
     def __init__(
         self,
         num_classes: int,
-        resnet_layers: int = 18,
         transformer_heads: int = 8,
         transformer_layers: int = 3,
         transformer_ff_dim: int = 2048,
@@ -27,8 +26,8 @@ class ResTranOCR(nn.Module):
         if self.use_stn:
             self.stn = STNBlock(in_channels=3)
 
-        # 2. Backbone: ResNet
-        self.backbone = ResNetFeatureExtractor(layers=resnet_layers, pretrained=False)
+        # 2. Backbone: ResNet34
+        self.backbone = ResNetFeatureExtractor(pretrained=False)
         
         # 3. Attention Fusion
         self.fusion = AttentionFusion(channels=self.cnn_channels)
@@ -56,30 +55,17 @@ class ResTranOCR(nn.Module):
         Returns:
             Logits: [Batch, Seq_Len, Num_Classes]
         """
-        b, t, c, h, w = x.size()
+        b, f, c, h, w = x.size()
+        x_flat = x.view(b * f, c, h, w)  # [B*F, C, H, W]
         
         if self.use_stn:
-            # 1. Compute temporal mean to find "stable" features
-            x_mean = torch.mean(x, dim=1) # [B, 3, H, W]
-            
-            # 2. Predict affine matrix from the mean frame
-            theta = self.stn(x_mean)      # [B, 2, 3]
-            
-            # 3. Prepare input for grid_sample (Flatten batch and time)
-            x_flat = x.view(b * t, c, h, w)
-            
-            # 4. Repeat theta for all frames (Temporal consistency)
-            # [B, 2, 3] -> [B, T, 2, 3] -> [B*T, 2, 3]
-            theta_repeated = theta.unsqueeze(1).repeat(1, t, 1, 1).view(b * t, 2, 3)
-            
-            # 5. Apply Warp
-            grid = F.affine_grid(theta_repeated, x_flat.size(), align_corners=False)
+            theta = self.stn(x_flat)  # [B*F, 2, 3]
+            grid = F.affine_grid(theta, x_flat.size(), align_corners=False)
             x_aligned = F.grid_sample(x_flat, grid, align_corners=False)
         else:
-            # Skip STN, directly flatten frames
-            x_aligned = x.view(b * t, c, h, w)
+            x_aligned = x_flat
         
-        features = self.backbone(x_aligned) # [B*T, 512, 1, W']
+        features = self.backbone(x_aligned)  # [B*F, 512, 1, W']
         fused = self.fusion(features)       # [B, 512, 1, W']
         
         # Prepare for Transformer: [B, C, 1, W'] -> [B, W', C]
@@ -90,5 +76,4 @@ class ResTranOCR(nn.Module):
         seq_out = self.transformer(seq_input) # [B, W', C]
         
         out = self.head(seq_out)              # [B, W', Num_Classes]
-        
         return out.log_softmax(2)

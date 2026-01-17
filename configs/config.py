@@ -41,7 +41,6 @@ class Config:
     RNN_DROPOUT: float = 0.25
     
     # ResTranOCR model hyperparameters
-    RESNET_LAYERS: int = 34
     TRANSFORMER_HEADS: int = 8
     TRANSFORMER_LAYERS: int = 3
     TRANSFORMER_FF_DIM: int = 2048

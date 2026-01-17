@@ -47,45 +47,24 @@ class MultiFrameCRNN(nn.Module):
             Logits: [Batch, Seq_Len, Num_Classes]
         """
         b, f, c, h, w = x.size()
+        x_flat = x.view(b * f, c, h, w)  # [B*F, C, H, W]
         
-        # --- STN Alignment Strategy (Optional) ---
         if self.use_stn:
-            # 1. Compute temporal mean to find "stable" features (avoids jitter between frames)
-            x_mean = torch.mean(x, dim=1) # [B, 3, H, W]
-            
-            # 2. Predict affine matrix from the mean frame
-            theta = self.stn(x_mean)      # [B, 2, 3]
-            
-            # 3. Prepare input for grid_sample (Flatten batch and time)
-            x_flat = x.view(b * f, c, h, w)
-            
-            # 4. Repeat theta for all frames (Temporal consistency)
-            # All frames in the same video sequence use the same transformation
-            # [B, 2, 3] -> [B, F, 2, 3] -> [B*F, 2, 3]
-            theta_repeated = theta.unsqueeze(1).repeat(1, f, 1, 1).view(b * f, 2, 3)
-            
-            # 5. Apply Warp (Image rectification)
-            grid = F.affine_grid(theta_repeated, x_flat.size(), align_corners=False)
+            theta = self.stn(x_flat)  # [B*F, 2, 3]
+            grid = F.affine_grid(theta, x_flat.size(), align_corners=False)
             x_aligned = F.grid_sample(x_flat, grid, align_corners=False)
         else:
-            # Skip STN, directly flatten frames
-            x_aligned = x.view(b * f, c, h, w)
-        
-        # --- Feature Extraction ---
-        features = self.backbone(x_aligned) # [B*F, 512, 1, W']
-        
-        # --- Fusion ---
+            x_aligned = x_flat
+
+        features = self.backbone(x_aligned)  # [B*F, 512, 1, W']
         fused = self.fusion(features)    # [B, 512, 1, W']
         
         # --- Sequence Modeling ---
         # Prepare for RNN: [B, C, 1, W'] -> [B, W', C]
         # Squeeze height (1) and permute dimensions
         seq_input = fused.squeeze(2).permute(0, 2, 1)
-        
-        # RNN Modeling
+
         rnn_out, _ = self.rnn(seq_input) # [B, W', Hidden*2]
-        
-        # Classification
         out = self.head(rnn_out)         # [B, W', Num_Classes]
         
         return out.log_softmax(2)

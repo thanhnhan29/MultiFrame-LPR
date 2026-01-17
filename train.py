@@ -61,10 +61,6 @@ def parse_args() -> argparse.Namespace:
         help="LSTM hidden size for CRNN (default: from config)"
     )
     parser.add_argument(
-        "--resnet-layers", type=int, choices=[18, 34], default=None,
-        help="ResNet variant for ResTranOCR: 18 or 34 (default: from config)"
-    )
-    parser.add_argument(
         "--transformer-heads", type=int, default=None,
         help="Number of transformer attention heads (default: from config)"
     )
@@ -111,7 +107,6 @@ def main():
         'seed': 'SEED',
         'num_workers': 'NUM_WORKERS',
         'hidden_size': 'HIDDEN_SIZE',
-        'resnet_layers': 'RESNET_LAYERS',
         'transformer_heads': 'TRANSFORMER_HEADS',
         'transformer_layers': 'TRANSFORMER_LAYERS',
     }
@@ -205,7 +200,6 @@ def main():
     if config.MODEL_TYPE == "restran":
         model = ResTranOCR(
             num_classes=config.NUM_CLASSES,
-            resnet_layers=config.RESNET_LAYERS,
             transformer_heads=config.TRANSFORMER_HEADS,
             transformer_layers=config.TRANSFORMER_LAYERS,
             transformer_ff_dim=config.TRANSFORMER_FF_DIM,
