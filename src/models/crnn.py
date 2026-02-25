@@ -39,12 +39,14 @@ class MultiFrameCRNN(nn.Module):
         # 5. Prediction Head
         self.head = nn.Linear(hidden_size * 2, num_classes)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         """
         Args:
             x: [Batch, Frames, 3, H, W]
+            return_features: If True, also return fused features for distillation.
         Returns:
             Logits: [Batch, Seq_Len, Num_Classes]
+            (optional) Fused features: [Batch, C, 1, W']
         """
         b, f, c, h, w = x.size()
         x_flat = x.view(b * f, c, h, w)  # [B*F, C, H, W]
@@ -66,5 +68,8 @@ class MultiFrameCRNN(nn.Module):
 
         rnn_out, _ = self.rnn(seq_input) # [B, W', Hidden*2]
         out = self.head(rnn_out)         # [B, W', Num_Classes]
+        logits = out.log_softmax(2)
         
-        return out.log_softmax(2)
+        if return_features:
+            return logits, fused
+        return logits

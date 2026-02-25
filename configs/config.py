@@ -1,4 +1,3 @@
-"""Configuration dataclass for the training pipeline."""
 from dataclasses import dataclass, field
 from typing import Dict
 import torch
@@ -28,12 +27,12 @@ class Config:
     
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 5e-4
-    EPOCHS: int = 30
+    LEARNING_RATE: float = 2e-4
+    EPOCHS: int = 50
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 1e-4
-    GRAD_CLIP: float = 5.0
+    GRAD_CLIP: float = 1.0
     SPLIT_RATIO: float = 0.9
     USE_CUDNN_BENCHMARK: bool = False
     
@@ -46,6 +45,12 @@ class Config:
     TRANSFORMER_LAYERS: int = 3
     TRANSFORMER_FF_DIM: int = 2048
     TRANSFORMER_DROPOUT: float = 0.1
+    
+    # Knowledge Distillation hyperparameters
+    DISTILL_ALPHA: float = 1.0       # Weight for feature alignment loss (MSE)
+    DISTILL_BETA: float = 0.5        # Weight for KD logit loss (KL-Div)
+    DISTILL_TEMPERATURE: float = 4.0  # Softmax temperature for KD
+    TEACHER_CHECKPOINT: str = ""      # Path to pre-trained teacher checkpoint
     
     DEVICE: torch.device = field(default_factory=lambda: torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     OUTPUT_DIR: str = "results"
