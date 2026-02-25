@@ -14,8 +14,8 @@ class Config:
     USE_STN: bool = True  # Enable Spatial Transformer Network
     
     # Data paths
-    DATA_ROOT: str = "data/train"
-    TEST_DATA_ROOT: str = "data/public_test"
+    DATA_ROOT: str = "/kaggle/input/lrlpr2026/train"
+    TEST_DATA_ROOT: str = "/kaggle/input/lrlpr2026/public_test"
     VAL_SPLIT_FILE: str = "data/val_tracks.json"
     SUBMISSION_FILE: str = "submission.txt"
     
