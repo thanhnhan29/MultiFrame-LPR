@@ -237,9 +237,13 @@ def run_teacher_phase(config: Config, args: argparse.Namespace) -> str:
     )
     trainer.fit()
     
-    # Return path to best checkpoint
+    # Ensure teacher checkpoint is saved (Trainer.fit may skip if val_acc stays 0)
     ckpt_path = os.path.join(config.OUTPUT_DIR, f"{config.EXPERIMENT_NAME}_best.pth")
-    print(f"\n✅ Teacher checkpoint: {ckpt_path}")
+    if not os.path.exists(ckpt_path):
+        print("⚠️ Best checkpoint not found (val_acc may have been 0). Saving final weights...")
+        torch.save(teacher.state_dict(), ckpt_path)
+    
+    print(f"\n✅ Teacher checkpoint saved: {ckpt_path}")
     return ckpt_path
 
 
