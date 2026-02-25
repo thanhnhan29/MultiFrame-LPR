@@ -56,7 +56,7 @@ class Trainer:
         self.scaler = GradScaler()
         
         # Tracking
-        self.best_acc = 0.0
+        self.best_acc = -1.0
         self.current_epoch = 0
     
     def _get_output_path(self, filename: str) -> str:

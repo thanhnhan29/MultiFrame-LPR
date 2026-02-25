@@ -30,7 +30,7 @@ class Config:
     LEARNING_RATE: float = 2e-4
     EPOCHS: int = 50
     SEED: int = 42
-    NUM_WORKERS: int = 10
+    NUM_WORKERS: int = 4
     WEIGHT_DECAY: float = 1e-4
     GRAD_CLIP: float = 1.0
     SPLIT_RATIO: float = 0.9
