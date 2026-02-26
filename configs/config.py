@@ -20,7 +20,7 @@ class Config:
     SUBMISSION_FILE: str = "submission.txt"
     
     IMG_HEIGHT: int = 32
-    IMG_WIDTH: int = 128
+    IMG_WIDTH: int = 96   # Matches SR output (2x of 16×48), aspect ratio 3:1
     
     # Character set
     CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -51,6 +51,9 @@ class Config:
     DISTILL_BETA: float = 0.5        # Weight for KD logit loss (KL-Div)
     DISTILL_TEMPERATURE: float = 4.0  # Softmax temperature for KD
     TEACHER_CHECKPOINT: str = ""      # Path to pre-trained teacher checkpoint
+    SR_CHECKPOINT: str = ""            # Path to Cgnet SR model checkpoint
+    SR_INPUT_H: int = 16               # SR model input height
+    SR_INPUT_W: int = 48               # SR model input width
     
     DEVICE: torch.device = field(default_factory=lambda: torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     OUTPUT_DIR: str = "results"

@@ -163,7 +163,22 @@ class MultiFrameDataset(Dataset):
         return train_tracks, val_tracks
 
     def _index_samples(self, tracks: List[str]) -> None:
-        """Index all samples from selected tracks."""
+        """Index all samples from selected tracks.
+        
+        Sample types:
+        - LR samples: raw low-resolution frames (lr-*.png)
+        - HR samples: high-resolution frames (hr-*.png)
+        - SR samples: SR-enhanced frames from preprocessing (sr-*.png)
+        
+        When SR files exist:
+        - SR images are added as non-synthetic (high quality)
+        - HR images are added as non-synthetic (high quality) 
+        - Old synthetic degradation of HR is SKIPPED
+        
+        When SR files don't exist:
+        - Falls back to old behavior (LR + synthetic from HR)
+        """
+        sr_track_count = 0
         for track_path in tqdm(tracks, desc=f"Indexing {self.mode}"):
             json_path = os.path.join(track_path, "annotations.json")
             if not os.path.exists(json_path):
@@ -187,44 +202,93 @@ class MultiFrameDataset(Dataset):
                     glob.glob(os.path.join(track_path, "hr-*.png")) +
                     glob.glob(os.path.join(track_path, "hr-*.jpg"))
                 )
+                sr_files = sorted(
+                    glob.glob(os.path.join(track_path, "sr-*.png")) +
+                    glob.glob(os.path.join(track_path, "sr-*.jpg"))
+                )
                 
-                # Real LR samples
-                self.samples.append({
-                    'paths': lr_files,
-                    'label': label,
-                    'is_synthetic': False,
-                    'track_id': track_id
-                })
-                
-                # Synthetic LR samples (only in training mode)
-                if self.mode == 'train':
+                if sr_files:
+                    # --- SR-enhanced pipeline ---
+                    # SR images (enhanced LR) are high quality
+                    sr_track_count += 1
                     self.samples.append({
-                        'paths': hr_files,
+                        'paths': sr_files,
                         'label': label,
-                        'is_synthetic': True,
+                        'is_synthetic': False,
                         'track_id': track_id
                     })
+                    
+                    # HR images are also high quality
+                    if hr_files:
+                        self.samples.append({
+                            'paths': hr_files,
+                            'label': label,
+                            'is_synthetic': False,
+                            'track_id': track_id
+                        })
+                else:
+                    # --- Fallback: old pipeline (no SR) ---
+                    # Real LR samples
+                    self.samples.append({
+                        'paths': lr_files,
+                        'label': label,
+                        'is_synthetic': False,
+                        'track_id': track_id
+                    })
+                    
+                    # Synthetic LR samples from HR (only in training)
+                    if self.mode == 'train' and hr_files:
+                        self.samples.append({
+                            'paths': hr_files,
+                            'label': label,
+                            'is_synthetic': True,
+                            'track_id': track_id
+                        })
             except Exception:
                 pass
+        
+        if sr_track_count > 0:
+            print(f"🔬 Found SR-enhanced images in {sr_track_count} tracks")
 
     def _index_test_samples(self, tracks: List[str]) -> None:
-        """Index test samples without labels."""
+        """Index test samples without labels.
+        
+        Prefers sr-*.png (SR-enhanced) over lr-*.png when available.
+        """
+        sr_count = 0
         for track_path in tqdm(tracks, desc="Indexing test"):
             track_id = os.path.basename(track_path)
             
-            # Load all LR images (sorted by frame number)
-            lr_files = sorted(
-                glob.glob(os.path.join(track_path, "lr-*.png")) +
-                glob.glob(os.path.join(track_path, "lr-*.jpg"))
+            # Prefer SR-enhanced images if available
+            sr_files = sorted(
+                glob.glob(os.path.join(track_path, "sr-*.png")) +
+                glob.glob(os.path.join(track_path, "sr-*.jpg"))
             )
             
-            if lr_files:
+            if sr_files:
+                sr_count += 1
                 self.samples.append({
-                    'paths': lr_files,
-                    'label': '',  # No label for test data
+                    'paths': sr_files,
+                    'label': '',
                     'is_synthetic': False,
                     'track_id': track_id
                 })
+            else:
+                # Fallback to LR
+                lr_files = sorted(
+                    glob.glob(os.path.join(track_path, "lr-*.png")) +
+                    glob.glob(os.path.join(track_path, "lr-*.jpg"))
+                )
+                if lr_files:
+                    self.samples.append({
+                        'paths': lr_files,
+                        'label': '',
+                        'is_synthetic': False,
+                        'track_id': track_id
+                    })
+        
+        if sr_count > 0:
+            print(f"🔬 Using SR-enhanced images for {sr_count}/{len(tracks)} test tracks")
 
     def __len__(self) -> int:
         return len(self.samples)
