@@ -27,7 +27,7 @@ class Config:
     
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 2e-4
+    LEARNING_RATE: float = 3e-4
     EPOCHS: int = 50
     SEED: int = 42
     NUM_WORKERS: int = 4

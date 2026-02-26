@@ -1,7 +1,8 @@
-"""Distillation Trainer for Teacher-Student Knowledge Distillation training."""
+import json
 import os
 from typing import Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -86,6 +87,14 @@ class DistillationTrainer:
         # Tracking
         self.best_acc = -1.0
         self.current_epoch = 0
+        self.history = {
+            'train_loss_total': [],
+            'train_loss_ctc': [],
+            'train_loss_feat': [],
+            'train_loss_kd': [],
+            'val_loss': [],
+            'val_acc': []
+        }
     
     def _get_output_path(self, filename: str) -> str:
         """Get full path for output file in configured directory."""
@@ -287,6 +296,14 @@ class DistillationTrainer:
             val_acc = val_metrics['acc']
             current_lr = self.scheduler.get_last_lr()[0]
             
+            # Record history
+            self.history['train_loss_total'].append(train_losses['total'])
+            self.history['train_loss_ctc'].append(train_losses['ctc'])
+            self.history['train_loss_feat'].append(train_losses['feature'])
+            self.history['train_loss_kd'].append(train_losses['kd'])
+            self.history['val_loss'].append(val_loss)
+            self.history['val_acc'].append(val_acc)
+            
             print(f"Epoch {epoch + 1}/{self.config.EPOCHS}: "
                   f"Train [CTC: {train_losses['ctc']:.4f} | "
                   f"Feat: {train_losses['feature']:.4f} | "
@@ -313,5 +330,56 @@ class DistillationTrainer:
             exp_name = self._get_exp_name()
             model_path = self._get_output_path(f"{exp_name}_student_best.pth")
             print(f"  💾 Saved final student: {model_path}")
+            
+        # Save plots and logs
+        self._plot_metrics()
+        self._save_logs()
         
         print(f"\n✅ Distillation complete! Best Val Acc: {self.best_acc:.2f}%")
+
+    def _plot_metrics(self) -> None:
+        """Generate and save loss visualization plots."""
+        exp_name = self._get_exp_name()
+        plot_path = self._get_output_path(f"{exp_name}_distill_metrics.png")
+        epochs = range(1, len(self.history['train_loss_total']) + 1)
+
+        plt.figure(figsize=(15, 5))
+
+        # Distillation Component Losses
+        plt.subplot(1, 3, 1)
+        plt.plot(epochs, self.history['train_loss_ctc'], label='CTC Loss')
+        plt.plot(epochs, self.history['train_loss_feat'], label='Feature MSE')
+        plt.plot(epochs, self.history['train_loss_kd'], label='KD KL-Div')
+        plt.title('Training Loss Components')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+
+        # Training vs Validation Total Loss
+        plt.subplot(1, 3, 2)
+        plt.plot(epochs, self.history['train_loss_total'], label='Train Total Loss')
+        plt.plot(epochs, self.history['val_loss'], label='Val Loss')
+        plt.title('Total Train vs Val Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+
+        # Accuracy
+        plt.subplot(1, 3, 3)
+        plt.plot(epochs, self.history['val_acc'], label='Val Acc (%)', color='green')
+        plt.title('Validation Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy (%)')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig(plot_path)
+        plt.close()
+        print(f"📊 Saved metric plots to {plot_path}")
+        
+    def _save_logs(self) -> None:
+        """Save history arrays to JSON."""
+        exp_name = self._get_exp_name()
+        log_path = self._get_output_path(f"{exp_name}_distill_history.json")
+        with open(log_path, 'w') as f:
+            json.dump(self.history, f, indent=4)

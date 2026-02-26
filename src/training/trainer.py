@@ -1,7 +1,8 @@
-"""Trainer class encapsulating the training and validation loop."""
+import json
 import os
 from typing import Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -58,6 +59,11 @@ class Trainer:
         # Tracking
         self.best_acc = -1.0
         self.current_epoch = 0
+        self.history = {
+            'train_loss': [],
+            'val_loss': [],
+            'val_acc': []
+        }
     
     def _get_output_path(self, filename: str) -> str:
         """Get full path for output file in configured directory."""
@@ -210,6 +216,11 @@ class Trainer:
             val_acc = val_metrics['acc']
             current_lr = self.scheduler.get_last_lr()[0]
             
+            # Record history
+            self.history['train_loss'].append(avg_train_loss)
+            self.history['val_loss'].append(val_loss)
+            self.history['val_acc'].append(val_acc)
+            
             # Log results
             print(f"Epoch {epoch + 1}/{self.config.EPOCHS}: "
                   f"Train Loss: {avg_train_loss:.4f} | "
@@ -234,8 +245,49 @@ class Trainer:
             exp_name = self._get_exp_name()
             model_path = self._get_output_path(f"{exp_name}_best.pth")
             print(f"  💾 Saved final model: {model_path}")
+            
+        # Save plots and logs
+        self._plot_metrics()
+        self._save_logs()
         
         print(f"\n✅ Training complete! Best Val Acc: {self.best_acc:.2f}%")
+
+    def _plot_metrics(self) -> None:
+        """Generate and save loss visualization plots."""
+        exp_name = self._get_exp_name()
+        plot_path = self._get_output_path(f"{exp_name}_train_metrics.png")
+        epochs = range(1, len(self.history['train_loss']) + 1)
+
+        plt.figure(figsize=(10, 5))
+
+        # Training vs Validation Loss
+        plt.subplot(1, 2, 1)
+        plt.plot(epochs, self.history['train_loss'], label='Train Loss')
+        plt.plot(epochs, self.history['val_loss'], label='Val Loss')
+        plt.title('Train vs Val Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+
+        # Accuracy
+        plt.subplot(1, 2, 2)
+        plt.plot(epochs, self.history['val_acc'], label='Val Acc (%)', color='green')
+        plt.title('Validation Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy (%)')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig(plot_path)
+        plt.close()
+        print(f"📊 Saved metric plots to {plot_path}")
+        
+    def _save_logs(self) -> None:
+        """Save history arrays to JSON."""
+        exp_name = self._get_exp_name()
+        log_path = self._get_output_path(f"{exp_name}_train_history.json")
+        with open(log_path, 'w') as f:
+            json.dump(self.history, f, indent=4)
 
     def predict(self, loader: DataLoader) -> List[Tuple[str, str, float]]:
         """Run inference on a data loader.
