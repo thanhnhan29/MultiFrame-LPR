@@ -27,12 +27,12 @@ class Config:
     
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 3e-4
+    LEARNING_RATE: float = 1e-5
     EPOCHS: int = 50
     SEED: int = 42
     NUM_WORKERS: int = 4
     WEIGHT_DECAY: float = 1e-4
-    GRAD_CLIP: float = 1.0
+    GRAD_CLIP: float = 0.5
     SPLIT_RATIO: float = 0.9
     USE_CUDNN_BENCHMARK: bool = False
     
